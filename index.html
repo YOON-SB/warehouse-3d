@@ -192,7 +192,7 @@ footer{border-top:1px solid var(--line);background:var(--panel);padding:10px 16p
     <button class="ghost close" type="button" id="repx">닫기</button>
     <h2 id="reph">AI 운영 리포트</h2>
     <div class="tags" id="reptags"><span class="tag">리포트 불러오는 중…</span></div>
-    <div class="note">숫자는 파이썬이 공식 실험(시드 1~5 평균)에서 계산하고, AI는 그 숫자로 문장만 썼습니다. 이 3D 화면은 시드 3 한 번의 기록이라, 화면의 값(예: 기준안 정시율 50%)은 리포트의 평균값(55.3%)과 조금 다를 수 있습니다. 리포트 출처: data/report.json (LLM 리포터가 index.csv로 생성)</div>
+    <div class="note">숫자는 파이썬이 공식 실험(시드 1~5 평균)에서 계산하고, AI는 그 숫자로 문장만 썼습니다. 이 3D 화면은 시드 3 한 번의 기록이라, 화면의 값(예: 기준안 정시율 50%)은 리포트의 평균값(55.3%)과 조금 다를 수 있습니다. 리포트 출처: report.json (LLM 리포터가 index.csv로 생성)</div>
     <div class="md" id="repmd"></div>
   </div>
 </div>
@@ -524,7 +524,7 @@ class House {
 // ---------- state ----------
 const cache = {};
 async function getRun(id) {
-  if (!cache[id]) cache[id] = fetch(`data/${id}.json`).then(r => { if (!r.ok) throw new Error(id); return r.json(); });
+  if (!cache[id]) cache[id] = fetch(`${id}.json`).then(r => { if (!r.ok) throw new Error(id); return r.json(); });
   return cache[id];
 }
 let houses, sceneIdx = 0, T = 0, TMAX = 21600, playing = true, speed = 60, floorMode = 'both';
@@ -556,7 +556,7 @@ function setFloor(f) {
 $('#polbtn').onclick = () => $('#pol').classList.add('open');
 $('#polx').onclick = () => $('#pol').classList.remove('open');
 $('#pol').onclick = e => { if (e.target.id === 'pol') $('#pol').classList.remove('open'); };
-// ---------- AI 운영 리포트: data/report.json을 읽어서 표시 ----------
+// ---------- AI 운영 리포트: report.json을 읽어서 표시 ----------
 const escH = t => t.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function mdToHtml(text) {
   const inl = t => escH(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
@@ -575,7 +575,7 @@ function mdToHtml(text) {
 }
 async function loadReport() {
   try {
-    const r = await fetch('data/report.json', {cache: 'no-store'});
+    const r = await fetch('report.json', {cache: 'no-store'});
     if (!r.ok) throw new Error(r.status);
     const j = await r.json();
     const ok = j['검증'] === '통과';
@@ -586,7 +586,7 @@ async function loadReport() {
     $('#repmd').innerHTML = j['리포트'] ? mdToHtml(j['리포트']) : '<p>리포트 본문이 없습니다. (' + escH(j['오류'] || '') + ')</p>';
   } catch (e) {
     $('#reptags').innerHTML = '';
-    $('#repmd').innerHTML = '<p>리포트 파일(data/report.json)을 불러오지 못했습니다.</p>';
+    $('#repmd').innerHTML = '<p>리포트 파일(report.json)을 불러오지 못했습니다.</p>';
   }
 }
 $('#repbtn').onclick = () => { $('#rep').classList.add('open'); $('#repx').focus(); loadReport(); };
@@ -825,7 +825,7 @@ addEventListener('resize', () => drawWeek());
 
 (async () => {
   try {
-    layout = await fetch('data/layout.json').then(r => r.json());
+    layout = await fetch('layout.json').then(r => r.json());
     houses = [new House(0), new House(OFF)];
     camA.position.set(...DEFAULT_VIEW.pos); controls.target.set(...DEFAULT_VIEW.tgt);
     const h = location.hash.replace('#scene-', '');
