@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>창고 로봇 정책 3D 재생 (Copy)</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* 관제실 콘솔: 두 창고를 같은 시점으로 나란히, 아래는 시간축 */
+  --bg:#ffffff; --panel:#f7f9fc; --panel2:#eef2f8; --line:#d9e0ea; --text:#1b2433; --muted:#5d6b7e;
+  --accent:#2f6fdb; --left:#b7791f; --good:#1f9d63; --warn:#c98a12; --bad:#e5484d;
+  --font:'IBM Plex Sans KR',system-ui,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;overflow:hidden}
+button{font:inherit;color:inherit}
+button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#app{display:grid;grid-template-rows:auto auto 1fr auto;height:100%}
+/* top */
+header{display:flex;align-items:center;gap:16px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+header h1{font-size:16px;font-weight:700;margin:0;letter-spacing:-.01em;white-space:nowrap}
+header h1 small{font-weight:400;color:var(--muted);font-size:12px;margin-left:8px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tab{border:1px solid var(--line);background:var(--panel2);padding:6px 12px;border-radius:6px;cursor:pointer;display:flex;gap:8px;align-items:center;white-space:nowrap}
+.tab b{font-family:var(--mono);font-weight:600;color:var(--muted)}
+.tab[aria-selected="true"]{border-color:var(--accent);background:#e6efff}
+.tab[aria-selected="true"] b{color:var(--accent)}
+.tab .opt{font-size:11px;color:var(--muted)}
+.spacer{flex:1}
+.ghost{border:1px solid var(--line);background:transparent;padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--muted)}
+.ghost:hover{color:var(--text);border-color:#9aa8ba}
+/* scene strip */
+#strip{display:grid;grid-template-columns:1.2fr 1fr auto;gap:16px;padding:10px 16px;border-bottom:1px solid var(--line);align-items:center}
+#strip .k{font-size:11px;color:var(--muted);letter-spacing:.02em}
+#strip .v{font-size:14px;margin-top:2px;text-wrap:balance}
+.presets{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.preset{border:1px solid #b9cdef;background:#eef4ff;color:#1f4fa8;padding:6px 10px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.preset:hover{background:#dde9ff}
+.preset.on{border-color:var(--accent)}
+/* stage */
+#stage{position:relative;min-height:0}
+#stage canvas{display:block;width:100%;height:100%}
+.vp{position:absolute;top:0;bottom:0;pointer-events:none}
+.vp.l{left:0;width:50%} .vp.r{left:50%;width:50%;border-left:1px solid var(--line)}
+.badge{position:absolute;left:10px;top:10px;background:rgba(255,255,255,.93);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0;width:228px;backdrop-filter:blur(4px)}
+.badge .who{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px}
+.badge .dot{width:10px;height:10px;border-radius:2px}
+.badge .sub{color:var(--muted);font-size:12px;margin-top:2px}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;margin-top:8px}
+.kpi .n{font-family:var(--mono);font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:10.5px;line-height:1.25;color:var(--muted)}
+.kpi.hl .n{color:var(--text)} .kpi.hl .l{color:var(--accent)}
+.kpi.hl{box-shadow:inset 2px 0 0 var(--accent);padding-left:7px}
+.weekotp{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:8px}
+.weekotp b{font-family:var(--mono);color:var(--text)}
+.chip{position:absolute;transform:translate(-50%,-100%);background:rgba(255,255,255,.95);border:1px solid var(--line);border-radius:5px;padding:3px 7px;font-size:11.5px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.chip.bad{border-color:var(--bad);color:#b42318;background:rgba(255,238,238,.96)}
+.chip.good{border-color:#8fd3b0;color:#146c43}
+.chip.warn{border-color:#e8c47a;color:#8a5a00}
+.chip.dim{color:var(--muted)}
+.legend{position:absolute;right:12px;bottom:12px;background:rgba(255,255,255,.93);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:11.5px;display:grid;grid-template-columns:auto auto;gap:3px 12px;pointer-events:auto}
+.legend span{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.legend .h{grid-column:1/-1;color:var(--muted);margin-top:2px}
+.floorsw{position:absolute;left:calc(50% - 98px);bottom:12px;display:flex;gap:0;pointer-events:auto;background:rgba(255,255,255,.95);border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.floorsw button{border:0;background:transparent;padding:6px 12px;cursor:pointer;color:var(--muted)}
+.floorsw button.on{background:#e6efff;color:var(--text)}
+#loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;background:var(--bg)}
+/* bottom */
+footer{border-top:1px solid var(--line);background:var(--panel);padding:10px 16px 10px;height:150px;display:grid;grid-template-columns:auto 1fr 280px;gap:16px;align-items:stretch}
+.transport{display:flex;flex-direction:column;gap:8px;justify-content:center;min-width:190px}
+.row{display:flex;gap:6px;align-items:center}
+.play{width:40px;height:40px;border-radius:50%;border:1px solid var(--accent);background:#e6efff;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.clock{font-family:var(--mono);font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.clock small{display:block;font-family:var(--font);font-size:11px;color:var(--muted);font-weight:400}
+.speeds{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.speeds button{border:0;background:transparent;padding:4px 8px;cursor:pointer;color:var(--muted);font-family:var(--mono);font-size:12px}
+.speeds button.on{background:#e6efff;color:var(--text)}
+#lanes{position:relative;min-width:0;cursor:pointer;height:128px}
+#lanes canvas{width:100%;height:100%;display:block}
+#week{min-width:0}
+#week .t{font-size:11px;color:var(--muted);margin-bottom:4px}
+#week canvas{width:100%;height:86px;display:block}
+/* dialog */
+#pol{position:fixed;inset:0;background:rgba(20,30,50,.35);display:none;align-items:center;justify-content:center;z-index:10}
+#pol.open{display:flex}
+#pol .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;max-width:820px;width:calc(100% - 32px);padding:18px 20px;max-height:85vh;overflow:auto}
+#pol h2{margin:0 0 10px;font-size:16px}
+#pol table{width:100%;border-collapse:collapse;font-size:13px}
+#pol th,#pol td{text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+#pol th{color:var(--muted);font-weight:500;font-size:12px}
+#pol td:first-child{font-weight:700;white-space:nowrap}
+#pol .close{float:right}
+#rep{position:fixed;inset:0;background:rgba(20,30,50,.35);display:none;align-items:center;justify-content:center;z-index:10}
+#rep.open{display:flex}
+#rep .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;max-width:820px;width:calc(100% - 32px);padding:18px 20px;max-height:85vh;overflow:auto}
+#rep h2{margin:0 0 10px;font-size:16px}
+#rep .close{float:right}
+#rep .tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+#rep .tag{font-size:11.5px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:var(--panel2);color:var(--muted);white-space:nowrap}
+#rep .tag.ok{border-color:#8fd3b0;background:rgba(62,207,142,.12);color:var(--good)}
+#rep .note{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12.5px;line-height:1.6;color:var(--muted);margin-bottom:6px}
+#rep .md{font-size:13.5px;line-height:1.7}
+#rep .md h3{font-size:14px;margin:16px 0 6px;color:var(--text)}
+#rep .md p{margin:0 0 6px}
+#rep .md ul{margin:0 0 6px;padding-left:20px}
+#rep .md li{margin:2px 0}
+#rep .md strong{color:var(--text)}
+@media (max-width:900px){
+  footer{height:auto}
+  #strip{grid-template-columns:1fr}
+  .presets{justify-content:flex-start}
+  footer{grid-template-columns:1fr}
+  #week{display:none}
+  .vp.l{width:100%;height:50%;bottom:auto} .vp.r{left:0;width:100%;top:50%;border-left:0;border-top:1px solid var(--line)}
+  .badge{min-width:0;padding:8px}
+  .kpis{grid-template-columns:1fr 1fr 1fr}
+  .legend{display:none}
+  .floorsw{left:12px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>창고 로봇 정책 3D 재생<small>시드 3 · 같은 주문·같은 고장 조건에서 정책만 다름</small></h1>
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <div class="spacer"></div>
+    <button class="ghost" id="polbtn" type="button">정책 설명</button>
+    <button class="ghost" id="repbtn" type="button">AI 운영 리포트</button>
+  </header>
+  <section id="strip">
+    <div><div class="k">보여주려는 것</div><div class="v" id="s-what"></div></div>
+    <div><div class="k">화면에서 볼 곳</div><div class="v" id="s-where"></div></div>
+    <div class="presets" id="presets"></div>
+  </section>
+  <main id="stage">
+    <canvas id="gl"></canvas>
+    <div class="vp l" id="vpL"></div>
+    <div class="vp r" id="vpR"></div>
+    <div class="floorsw" id="floorsw">
+      <button type="button" data-f="both" class="on">1·2층</button>
+      <button type="button" data-f="1">1층만</button>
+      <button type="button" data-f="2">2층만</button>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div id="loading">로그 불러오는 중…</div>
+  </main>
+  <footer>
+    <div class="transport">
+      <div class="row">
+        <button class="play" id="play" type="button" aria-label="재생/일시정지"></button>
+        <div class="clock" id="clock">0:00<small>창 시작부터</small></div>
+      </div>
+      <div class="row">
+        <div class="speeds" id="speeds"></div>
+      </div>
+    </div>
+    <div id="lanes"><canvas id="lanecv"></canvas></div>
+    <div id="week"><div class="t" id="weekt"></div><canvas id="weekcv"></canvas></div>
+  </footer>
+</div>
+<div id="pol" role="dialog" aria-modal="true" aria-labelledby="polh">
+  <div class="box">
+    <button class="ghost close" type="button" id="polx">닫기</button>
+    <h2 id="polh">정책 설명</h2>
+    <table>
+      <thead><tr><th>이름</th><th>보관 규칙</th><th>어떤 정책인가</th><th>결과 (시드 3)</th></tr></thead>
+      <tbody>
+        <tr><td>BASE (기준안)</td><td>R (아무 빈 칸)</td><td>먼저 들어온 일부터 처리, 배터리 20%면 가까운 충전기로</td><td>12대에서 트럭 절반이 늦음 (정시율 50%)</td></tr>
+        <tr><td>B</td><td>F (목적지별 구역)</td><td>마감 50분 안 남은 출고를 먼저 + 2층에서 미리 충전</td><td>12대는 모두 정시, 10대는 박스가 쌓임</td></tr>
+        <tr><td>B2</td><td>F</td><td>B + 충전기가 차 있으면 줄 서지 않고 일을 더 함</td><td>충전 대기가 크게 줄어듦</td></tr>
+        <tr><td>B3 (채택안)</td><td>F</td><td>B2 + 엘베에 가까운 칸에 넣고, 가까운 박스부터 꺼냄</td><td>로봇이 빠듯해도 가장 잘 버팀</td></tr>
+        <tr><td>F1 (실패 예시)</td><td>R</td><td>입고·출고 모두 1층 칸을 먼저 씀</td><td>1층에 로봇이 몰려 막힘 (정시율 0.8%)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div id="rep" role="dialog" aria-modal="true" aria-labelledby="reph">
+  <div class="box">
+    <button class="ghost close" type="button" id="repx">닫기</button>
+    <h2 id="reph">AI 운영 리포트</h2>
+    <div class="tags" id="reptags"><span class="tag">리포트 불러오는 중…</span></div>
+    <div class="note">숫자는 파이썬이 공식 실험(시드 1~5 평균)에서 계산하고, AI는 그 숫자로 문장만 썼습니다. 이 3D 화면은 시드 3 한 번의 기록이라, 화면의 값(예: 기준안 정시율 50%)은 리포트의 평균값(55.3%)과 조금 다를 수 있습니다.</div>
+    <div class="md" id="repmd"></div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---------- config ----------
+const FH = 7.5;            // 2층 높이(시각 과장)
+const OFF = 120;           // 두 창고 간 x 간격(장면 좌표)
+const LV = 0.42;           // 선반 단 높이
+const STATES = ['PARKED','MOVE_EMPTY','MOVE_LOADED','PICK_DROP','ZONE_WAIT','ELEV_WAIT','ELEV_RIDE','CHARGING','CHARGE_WAIT','OVERFLOW'];
+const MOVING = new Set([1,2,6]);
+const SCOL = {PARKED:'#6b7685',OVERFLOW:'#6b7685',MOVE_EMPTY:'#8ec1ff',MOVE_LOADED:'#2f7cf6',PICK_DROP:'#a594ff',ZONE_WAIT:'#f2b84b',ELEV_WAIT:'#ff8f3d',ELEV_RIDE:'#ffd08a',CHARGING:'#3ecf8e',CHARGE_WAIT:'#ff4f5a'};
+const DESTC = ['#56606d','#c9a06a','#5f9fa3','#a483a8'];
+const BOXC = '#d4ad6c';
+const RUNS = {
+  BASE_R_12:{name:'BASE',full:'BASE · 기준안',rule:'보관 R',robots:12},
+  B3_F_12:{name:'B3',full:'B3 · 채택안',rule:'보관 F',robots:12},
+  B_F_10:{name:'B',full:'B',rule:'보관 F',robots:10},
+  B3_F_10:{name:'B3',full:'B3 · 채택안',rule:'보관 F',robots:10},
+  B_F_16:{name:'B',full:'B',rule:'보관 F',robots:16},
+  B2_F_16:{name:'B2',full:'B2',rule:'보관 F',robots:16},
+  F1_R_12:{name:'F1',full:'F1 · 실패 예시',rule:'보관 R',robots:12},
+};
+const SCENES = [
+  {n:'①',title:'기준안 vs 채택안',L:'BASE_R_12',R:'B3_F_12',h0:49,
+   what:'우리 정책(B3)으로 바꾸면 얼마나 좋아지나 · 로봇 12대',
+   where:'출고 도크의 트럭 출발(정시/지연), 1층 충전기 앞 줄',
+   key:'late', lane:{k:'s_charge_wait',label:'충전 대기 로봇'}, week:{k:'cw',label:'충전 대기 로봇 수 (10분 평균)'},
+   presets:[{id:'docks',label:'출고 도크',floor:'1',tgt:[20,0,25],pos:[20,30,58]},{id:'chg1',label:'1층 충전기',floor:'1',tgt:[3,0,8],pos:[16,12,22]}]},
+  {n:'②',title:'B3를 고른 이유',L:'B_F_10',R:'B3_F_10',h0:162,
+   what:'로봇이 빠듯할 때(10대) B3만 버틴다 · 12대에서는 둘 다 비슷',
+   where:'2층 입고장에 쌓이는 박스 수 (주말로 갈수록 B는 계속 쌓임)',
+   key:'pile', lane:{k:'inbound_waiting',label:'2층 입고 대기 박스'}, week:{k:'inw',label:'2층 입고 대기 박스 (주간 추이)'},
+   presets:[{id:'inb',label:'2층 입고장',floor:'both',tgt:[20,FH,27],pos:[20,FH+20,52]}]},
+  {n:'③',title:'충전 규칙이 필요한 이유',opt:true,L:'B_F_16',R:'B2_F_16',h0:156,
+   what:'충전기 앞에 줄 서지 않게 한 효과 · 로봇 16대',
+   where:'2층 충전기 앞 로봇 줄 (왼쪽 벽, 위·아래 두 곳)',
+   key:'chg', lane:{k:'s_charge_wait',label:'충전 대기 로봇'}, week:{k:'cw',label:'충전 대기 로봇 수 (10분 평균)'},
+   presets:[{id:'chg2',label:'2층 충전기',floor:'2',tgt:[2,FH,16],pos:[22,FH+17,17]}]},
+  {n:'④',title:'실패 예시',opt:true,L:'BASE_R_12',R:'F1_R_12',h0:49,
+   what:'단순히 1층을 먼저 쓰면 오히려 막힌다 (BASE와 비교)',
+   where:'1층 선반이 꽉 차고(2층은 거의 빔) 1층 통로·셀 앞·충전기에 로봇이 몰림',
+   key:'zone', lane:{k:'s_zone_wait',label:'구역·교차로 대기 로봇'}, week:{k:'zw',label:'구역 대기 로봇 수 (10분 평균)'},
+   presets:[{id:'f1',label:'1층 통로·셀',floor:'1',tgt:[21,0,16],pos:[21,30,46]}]},
+];
+const DEFAULT_VIEW = {tgt:[17,FH*0.4,14],pos:[17,44,62]};
+
+// ---------- dom ----------
+const $ = s => document.querySelector(s);
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+
+// legend
+(() => {
+  const lg = $('#legend');
+  const add = (c, t) => { const s = el('span'); const i = el('i'); i.style.background = c; s.append(i, t); lg.append(s); };
+  const h = t => lg.append(el('div','h',t));
+  h('로봇 상태');
+  add(SCOL.MOVE_EMPTY,'이동(빈 손)'); add(SCOL.MOVE_LOADED,'이동(박스)');
+  add(SCOL.PICK_DROP,'집기·내리기'); add(SCOL.ZONE_WAIT,'통로 대기');
+  add(SCOL.ELEV_WAIT,'엘베 대기'); add(SCOL.ELEV_RIDE,'엘베 탑승');
+  add(SCOL.CHARGING,'충전 중'); add(SCOL.CHARGE_WAIT,'충전 대기');
+  add(SCOL.PARKED,'주차');
+  h('선반 박스 = 나갈 도크');
+  add(DESTC[1],'OUT1'); add(DESTC[2],'OUT2'); add(DESTC[3],'OUT3'); add(BOXC,'입고 대기·셀 박스');
+})();
+
+// ---------- three setup ----------
+const canvas = $('#gl');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setScissorTest(true);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#ffffff');
+scene.fog = new THREE.Fog('#ffffff', 160, 320);
+scene.add(new THREE.HemisphereLight('#ffffff', '#c9d2de', 1.2));
+const sun = new THREE.DirectionalLight('#ffffff', 1.4); sun.position.set(30, 60, 40); scene.add(sun);
+const camA = new THREE.PerspectiveCamera(40, 1, 0.5, 600);
+const camB = camA.clone();
+const controls = new OrbitControls(camA, $('#stage'));
+controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.49; controls.minDistance = 6; controls.maxDistance = 160;
+
+let layout;
+const M = {}; // shared materials/geoms
+function mat(c, o = {}) { return new THREE.MeshStandardMaterial({color:c, roughness:.75, metalness:.05, ...o}); }
+
+function buildStatic(group) {
+  const [W, Dp] = layout.floor_size;
+  for (const f of [1, 2]) {
+    const y0 = (f - 1) * FH;
+    const fg = new THREE.Group(); fg.userData.floor = f; group.add(fg);
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(W, 0.12, Dp), mat(f === 1 ? '#e9edf3' : '#e2e9f3', {transparent:f === 2, opacity:f === 2 ? 0.55 : 1}));
+    slab.position.set(W / 2, y0 - 0.06, Dp / 2); fg.add(slab);
+    // edge
+    const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(W, 0.12, Dp)), new THREE.LineBasicMaterial({color:'#b8c3d1'}));
+    edge.position.copy(slab.position); fg.add(edge);
+    // aisles
+    const pts = [];
+    for (const [af, y, x0, x1] of layout.aisles) if (af === f) { pts.push(x0, y0 + 0.01, y, x1, y0 + 0.01, y); }
+    for (const x of layout.main_x) pts.push(x, y0 + 0.01, 0.8, x, y0 + 0.01, layout.bottom_y[f]);
+    pts.push(layout.main_x[0], y0 + 0.01, layout.bottom_y[f], layout.main_x[3], y0 + 0.01, layout.bottom_y[f]);
+    const ag = new THREE.BufferGeometry(); ag.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    fg.add(new THREE.LineSegments(ag, new THREE.LineBasicMaterial({color:'#c6d0dd'})));
+    // rack frames: unique (x,y)
+    const seen = new Set(); const rp = [];
+    for (const [sf, x, y] of layout.slots) { if (sf !== f) continue; const k = x + ',' + y; if (!seen.has(k)) { seen.add(k); rp.push([x, y]); } }
+    const rg = new THREE.BoxGeometry(0.92, 4 * LV + 0.05, 0.86);
+    const rm = new THREE.MeshStandardMaterial({color:'#5f7387', transparent:true, opacity:0.10, depthWrite:false});
+    const racks = new THREE.InstancedMesh(rg, rm, rp.length);
+    const m4 = new THREE.Matrix4();
+    rp.forEach(([x, y], i) => { m4.makeTranslation(x, y0 + 2 * LV, y); racks.setMatrixAt(i, m4); });
+    fg.add(racks);
+    // left wall slots
+    for (const [kind, sf, x, y] of layout.left) {
+      if (sf !== f) continue;
+      let c = '#d3dbe6', h = 0.03;
+      if (kind.includes('charger')) c = '#a6dfc4';
+      else if (kind.includes('charge_wait')) c = '#f4bcc0';
+      else if (kind.includes('elev_wait')) c = '#f6d2a4';
+      const p = new THREE.Mesh(new THREE.BoxGeometry(kind.startsWith('large') ? 1.8 : 1.1, h, 1.1), mat(c, {emissive:c, emissiveIntensity:.35}));
+      p.position.set(x, y0 + 0.02, y); fg.add(p);
+    }
+  }
+  // cells (1F)
+  for (const [, x, y] of layout.cells) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.04, 2.8), mat('#c9d6e6'));
+    p.position.set(x, 0.02, y); group.children[0].add(p);
+  }
+  // docks
+  for (const [d, f, x, y] of layout.docks) {
+    const y0 = (f - 1) * FH;
+    const p = new THREE.Mesh(new THREE.BoxGeometry(d.startsWith('IN') ? 5 : 4, 0.05, 1.0), mat(d.startsWith('IN') ? '#ecdcb6' : '#c7d7ea'));
+    p.position.set(x, y0 + 0.03, y - 0.3); group.children[f - 1].add(p);
+  }
+  // elevator shaft
+  const [ex, ey, ew, ed] = layout.elevator.rect;
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(ew, FH + 2.2, ed), new THREE.MeshStandardMaterial({color:'#7d93ab', transparent:true, opacity:0.08, depthWrite:false}));
+  shaft.position.set(ex + ew / 2, (FH + 2.2) / 2, ey + ed / 2); group.add(shaft);
+  const se = new THREE.LineSegments(new THREE.EdgesGeometry(shaft.geometry), new THREE.LineBasicMaterial({color:'#8e9db0'}));
+  se.position.copy(shaft.position); group.add(se);
+}
+
+// ---------- warehouse instance ----------
+class House {
+  constructor(xoff) {
+    this.g = new THREE.Group(); this.g.position.x = xoff; scene.add(this.g);
+    buildStatic(this.g);
+    this.f1 = this.g.children[0]; this.f2 = this.g.children[1];
+    const NS = layout.slots.length;
+    // stock boxes
+    this.stockMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.78, LV * 0.78, 0.7), mat('#ffffff'), NS);
+    this.stockMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.g.add(this.stockMesh);
+    this.stockF2 = this.stockMesh; // single mesh across floors; visibility via scale
+    // inbound piles (2F) — 2 docks
+    this.pileMax = 1200;
+    this.pileMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 0.32, 0.55), mat(BOXC), this.pileMax * 2);
+    this.pileMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.f2.add(this.pileMesh);
+    // cells totes
+    this.cellMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.55, 0.3, 0.55), mat(BOXC), 9 * 64);
+    this.cellMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.f1.add(this.cellMesh);
+    // elevator car
+    const [ex, ey, ew, ed] = layout.elevator.rect;
+    this.car = new THREE.Mesh(new THREE.BoxGeometry(ew - 0.2, 0.15, ed - 0.2), mat('#9fb4c9', {emissive:'#2c3e52'}));
+    this.carFrame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(ew - 0.2, 2.0, ed - 0.2)), new THREE.LineBasicMaterial({color:'#9fb4c9'}));
+    this.car.position.set(ex + ew / 2, 0, ey + ed / 2); this.carFrame.position.copy(this.car.position);
+    this.g.add(this.car, this.carFrame);
+    // trucks
+    this.trucks = [1, 2, 3].map(d => {
+      const [, , x, y] = layout.docks[d - 1];
+      const t = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.7, 7.5), mat('#dde3ea'));
+      body.position.set(0, 1.55, 3.75 + 0.6);
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.2, 1.9), mat('#5a6b7e'));
+      cab.position.set(0, 1.3, 8.9);
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.66, 0.35, 7.56), mat('#3ecf8e', {emissive:'#3ecf8e', emissiveIntensity:.6}));
+      stripe.position.set(0, 0.55, 4.35);
+      t.add(body, cab, stripe); t.userData = {stripe, x, y, body};
+      t.position.set(x, 0, y); t.visible = false; this.f1.add(t);
+      return t;
+    });
+    this.robots = new Map();
+    this.robotGeoS = new THREE.BoxGeometry(0.9, 0.5, 0.9);
+    this.haloGeo = new THREE.CircleGeometry(0.95, 20).rotateX(-Math.PI / 2);
+    this.robotGeoL = new THREE.BoxGeometry(1.5, 0.55, 1.4);
+    this.carry = new THREE.BoxGeometry(0.5, 0.32, 0.5);
+  }
+  load(data) {
+    this.data = data;
+    for (const r of this.robots.values()) this.g.remove(r.mesh);
+    this.robots.clear();
+    for (const r of data.robots) {
+      const bin = Uint8Array.from(atob(r.kf), c => c.charCodeAt(0));
+      const dv = new DataView(bin.buffer);
+      const n = r.n, t = new Float32Array(n), x = new Float32Array(n), y = new Float32Array(n), f = new Float32Array(n), s = new Uint8Array(n), ld = new Uint8Array(n), b = new Uint8Array(n);
+      for (let i = 0; i < n; i++) { const o = i * 12; t[i] = dv.getFloat32(o, true); x[i] = dv.getInt16(o + 4, true) / 100; y[i] = dv.getInt16(o + 6, true) / 100; f[i] = dv.getUint8(o + 8); s[i] = dv.getUint8(o + 9); ld[i] = dv.getUint8(o + 10); b[i] = dv.getUint8(o + 11); }
+      const large = r.id.startsWith('L');
+      const m = new THREE.Mesh(large ? this.robotGeoL : this.robotGeoS, new THREE.MeshStandardMaterial({color:'#888', emissive:'#000', roughness:.5}));
+      const box = new THREE.Mesh(large ? new THREE.BoxGeometry(1.2, 0.5, 1.1) : this.carry, mat(BOXC));
+      box.position.y = large ? 0.55 : 0.42; m.add(box);
+      const halo = new THREE.Mesh(this.haloGeo, new THREE.MeshBasicMaterial({color:'#fff', transparent:true, opacity:.35, depthWrite:false}));
+      halo.position.y = -0.22; if (large) halo.scale.setScalar(1.4); m.add(halo); m.userData.halo = halo;
+      this.g.add(m);
+      this.robots.set(r.id, {mesh:m, box, t, x, y, f, s, ld, b, n, large, i:0, state:0});
+    }
+    this.resetDynamic(0);
+  }
+  resetDynamic(t) {
+    const d = this.data;
+    this.stock = new Map(d.snap.stock.map(([k, v]) => [k, v]));
+    this.piles = {1:d.snap.piles.IN1, 2:d.snap.piles.IN2};
+    this.cells = {...d.snap.cells};
+    this.si = 0; this.pi = 0; this.ci = 0;
+    this.advance(t, true);
+  }
+  advance(t, full) {
+    const d = this.data; let dirtyS = full, dirtyP = full, dirtyC = full;
+    while (this.si < d.stock_ev.length && d.stock_ev[this.si][0] <= t) { const [, k, v] = d.stock_ev[this.si++]; if (v < 0) this.stock.delete(k); else this.stock.set(k, v); dirtyS = true; }
+    while (this.pi < d.pile_ev.length && d.pile_ev[this.pi][0] <= t) { const [, dk, dv] = d.pile_ev[this.pi++]; this.piles[dk] += dv; dirtyP = true; }
+    while (this.ci < d.cell_ev.length && d.cell_ev[this.ci][0] <= t) { const [, c, dv] = d.cell_ev[this.ci++]; this.cells[c] += dv; dirtyC = true; }
+    if (dirtyS) this.drawStock();
+    if (dirtyP) this.drawPiles();
+    if (dirtyC) this.drawCells();
+  }
+  drawStock() {
+    const m4 = new THREE.Matrix4(), c = new THREE.Color(), zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    const mesh = this.stockMesh;
+    layout.slots.forEach(([f, x, y, lv], i) => {
+      const v = this.stock.get(i);
+      if (v === undefined || !floorOn(f)) { mesh.setMatrixAt(i, zero); return; }
+      m4.makeTranslation(x, (f - 1) * FH + (lv - 1) * LV + LV * 0.42, y); mesh.setMatrixAt(i, m4);
+      mesh.setColorAt(i, c.set(DESTC[v] || DESTC[0]));
+    });
+    mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+  drawPiles() {
+    const m4 = new THREE.Matrix4(), zero = new THREE.Matrix4().makeScale(0, 0, 0); const mesh = this.pileMesh;
+    const centers = {1:[13.5, 27.3], 2:[28.45, 27.3]}; const COLS = 10, ROWS = 5, PER = COLS * ROWS;
+    let idx = 0;
+    for (const dk of [1, 2]) {
+      const n = Math.max(0, Math.min(this.pileMax, this.piles[dk]));
+      const [cx, cy] = centers[dk];
+      for (let k = 0; k < this.pileMax; k++, idx++) {
+        if (k >= n) { mesh.setMatrixAt(idx, zero); continue; }
+        const layer = Math.floor(k / PER), r = k % PER, col = r % COLS, row = Math.floor(r / COLS);
+        m4.makeTranslation(cx + (col - (COLS - 1) / 2) * 0.62, FH + 0.16 + layer * 0.33, cy + (row - (ROWS - 1) / 2) * 0.62);
+        mesh.setMatrixAt(idx, m4);
+      }
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+  drawCells() {
+    const m4 = new THREE.Matrix4(), zero = new THREE.Matrix4().makeScale(0, 0, 0); const mesh = this.cellMesh;
+    let idx = 0;
+    for (const [cid, cx, cy] of layout.cells) {
+      const n = Math.max(0, this.cells[cid] || 0);
+      for (let k = 0; k < 64; k++, idx++) {
+        if (k >= n) { mesh.setMatrixAt(idx, zero); continue; }
+        const layer = Math.floor(k / 16), r = k % 16;
+        m4.makeTranslation(cx + ((r % 4) - 1.5) * 0.62, 0.17 + layer * 0.31, cy + (Math.floor(r / 4) - 1.5) * 0.62);
+        mesh.setMatrixAt(idx, m4);
+      }
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+  update(t) {
+    const counts = {chgWait:0, elevWait:0, zone:0, charging:0, moving:0};
+    const c = new THREE.Color();
+    for (const R of this.robots.values()) {
+      const {t: T} = R; let i = R.i;
+      if (i >= R.n || T[i] > t) i = 0;
+      // forward search
+      while (i + 1 < R.n && T[i + 1] <= t) i++;
+      if (T[i] > t) { // before first kf
+        i = 0;
+      }
+      R.i = i;
+      let x = R.x[i], y = R.y[i], f = R.f[i];
+      const s = R.s[i];
+      if (MOVING.has(s) && i + 1 < R.n && T[i + 1] > T[i]) {
+        const u = Math.min(1, Math.max(0, (t - T[i]) / (T[i + 1] - T[i])));
+        x += (R.x[i + 1] - x) * u; y += (R.y[i + 1] - y) * u; f += (R.f[i + 1] - f) * u;
+      }
+      const st = STATES[s] || 'PARKED';
+      R.mesh.position.set(x, (f - 1) * FH + (R.large ? 0.3 : 0.27), y);
+      const flo = Math.round(f);
+      R.mesh.visible = floorOn(flo) || s === 6;
+      const col = SCOL[st];
+      R.mesh.material.color.set(col); R.mesh.material.emissive.set(col); R.mesh.material.emissiveIntensity = 0.6; R.mesh.userData.halo.material.color.set(col);
+      R.box.visible = R.ld[i] > 0;
+      if (st === 'CHARGE_WAIT') counts.chgWait++;
+      else if (st === 'ELEV_WAIT') counts.elevWait++;
+      else if (st === 'ZONE_WAIT') counts.zone++;
+      else if (st === 'CHARGING') counts.charging++;
+    }
+    // elevator
+    const E = this.data.elev; let ef = 1;
+    if (E.length) {
+      let k = 0; while (k + 1 < E.length && E[k + 1][0] <= t) k++;
+      if (E[k][0] > t) ef = E[0][1];
+      else if (k + 1 < E.length && E[k + 1][0] > E[k][0]) ef = E[k][1] + (E[k + 1][1] - E[k][1]) * Math.min(1, (t - E[k][0]) / (E[k + 1][0] - E[k][0]));
+      else ef = E[k][1];
+    }
+    this.car.position.y = (ef - 1) * FH + 0.05; this.carFrame.position.y = this.car.position.y + 1.0;
+    // trucks
+    const tinfo = [];
+    for (const d of [1, 2, 3]) {
+      const tr = this.trucks[d - 1];
+      const cand = this.data.trucks.filter(z => z.dock === d && z.arrive <= t && (z.depart == null || z.depart + 40 > t));
+      const z = cand.length ? cand[cand.length - 1] : null;
+      if (!z) { tr.visible = false; tinfo.push(null); continue; }
+      tr.visible = floorOn(1);
+      const leaving = z.depart != null && t >= z.depart;
+      tr.position.z = tr.userData.y + (leaving ? (t - z.depart) * 0.5 : 0);
+      const late = t > z.deadline;
+      const col = late ? '#ff4f5a' : (z.deadline - t < 15 * 60 ? '#f2b84b' : '#3ecf8e');
+      tr.userData.stripe.material.color.set(col); tr.userData.stripe.material.emissive.set(col);
+      const pal = z.pal0 + z.pal.filter(p => p <= t).length;
+      tinfo.push({z, pal, late, leaving});
+    }
+    this.tinfo = tinfo; this.counts = counts;
+  }
+}
+
+// ---------- state ----------
+const cache = {};
+async function getRun(id) {
+  if (!cache[id]) cache[id] = fetch(`${id}.json`).then(r => { if (!r.ok) throw new Error(id); return r.json(); });
+  return cache[id];
+}
+let houses, sceneIdx = 0, T = 0, TMAX = 21600, playing = true, speed = 60, floorMode = 'both';
+function floorOn(f) { return floorMode === 'both' || String(f) === floorMode; }
+
+// ---------- UI build ----------
+const tabs = $('#tabs');
+SCENES.forEach((s, i) => {
+  const b = el('button', 'tab'); b.type = 'button'; b.setAttribute('role', 'tab');
+  b.append(el('b', null, s.n), el('span', null, s.title));
+  if (s.opt) b.append(el('span', 'opt', '선택'));
+  b.onclick = () => setScene(i); tabs.append(b);
+});
+const SPEEDS = [10, 30, 60, 120, 300];
+SPEEDS.forEach(v => { const b = el('button', null, v + '×'); b.type = 'button'; b.onclick = () => { speed = v; drawSpeeds(); }; $('#speeds').append(b); });
+function drawSpeeds() { [...$('#speeds').children].forEach((b, i) => b.classList.toggle('on', SPEEDS[i] === speed)); }
+drawSpeeds();
+const playBtn = $('#play');
+function drawPlay() { playBtn.innerHTML = playing ? '<svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="1" width="3.5" height="12" fill="#2f6fdb"/><rect x="8.5" y="1" width="3.5" height="12" fill="#2f6fdb"/></svg>' : '<svg width="14" height="14" viewBox="0 0 14 14"><path d="M3 1 L13 7 L3 13 Z" fill="#2f6fdb"/></svg>'; }
+playBtn.onclick = () => { playing = !playing; drawPlay(); };
+drawPlay();
+addEventListener('keydown', e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); playing = !playing; drawPlay(); } });
+document.querySelectorAll('#floorsw button').forEach(b => b.onclick = () => setFloor(b.dataset.f));
+function setFloor(f) {
+  floorMode = f;
+  document.querySelectorAll('#floorsw button').forEach(b => b.classList.toggle('on', b.dataset.f === f));
+  if (houses) for (const h of houses) { h.f1.visible = floorOn(1); h.f2.visible = floorOn(2); h.drawStock(); }
+}
+$('#polbtn').onclick = () => $('#pol').classList.add('open');
+$('#polx').onclick = () => $('#pol').classList.remove('open');
+$('#pol').onclick = e => { if (e.target.id === 'pol') $('#pol').classList.remove('open'); };
+// ---------- AI 운영 리포트: report.json을 읽어서 표시 ----------
+const escH = t => t.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function mdToHtml(text) {
+  const inl = t => escH(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  let html = '', inList = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    const li = /^[*-]\s+/.test(line);
+    if (inList && !li) { html += '</ul>'; inList = false; }
+    if (!line) continue;
+    if (li && /^[*-]\s+.*:\**\s*데이터 없음\.?$/.test(line)) continue;      // 빈 항목은 숨김
+    if (line.startsWith('## ')) html += '<h3>' + inl(line.slice(3)) + '</h3>';
+    else if (li) { if (!inList) { html += '<ul>'; inList = true; } html += '<li>' + inl(line.replace(/^[*-]\s+/, '')) + '</li>'; }
+    else html += '<p>' + inl(line) + '</p>';
+  }
+  return html + (inList ? '</ul>' : '');
+}
+async function loadReport() {
+  try {
+    const r = await fetch('report.json', {cache: 'no-store'});
+    if (!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    const ok = j['검증'] === '통과';
+    const when = (j['생성시각'] || '').replace('T', ' ');
+    $('#reptags').innerHTML = `<span class="tag">${escH(j['모델'] || '모델 정보 없음')}</span>` +
+      `<span class="tag">${escH(when)} 생성</span>` +
+      `<span class="tag ${ok ? 'ok' : ''}" style="${ok ? '' : 'color:var(--warn);border-color:#e8c47a'}">${ok ? '숫자 검증 통과' : '검증 확인 필요'}</span>`;
+    $('#repmd').innerHTML = j['리포트'] ? mdToHtml(j['리포트']) : '<p>리포트 본문이 없습니다. (' + escH(j['오류'] || '') + ')</p>';
+  } catch (e) {
+    $('#reptags').innerHTML = '';
+    $('#repmd').innerHTML = '<p>리포트 파일(report.json)을 불러오지 못했습니다.</p>';
+  }
+}
+$('#repbtn').onclick = () => { $('#rep').classList.add('open'); $('#repx').focus(); loadReport(); };
+$('#repx').onclick = () => $('#rep').classList.remove('open');
+$('#rep').onclick = e => { if (e.target.id === 'rep') $('#rep').classList.remove('open'); };
+addEventListener('keydown', e => { if (e.key === 'Escape' && $('#rep').classList.contains('open')) $('#rep').classList.remove('open'); });
+
+// camera fly
+let fly = null;
+function flyTo(v) {
+  fly = {t0:performance.now(), dur:900, p0:camA.position.clone(), t0v:controls.target.clone(), p1:new THREE.Vector3(...v.pos), t1:new THREE.Vector3(...v.tgt)};
+}
+
+// badges
+function makeBadge(vp) {
+  vp.innerHTML = '';
+  const b = el('div', 'badge');
+  b.innerHTML = `<div class="who"><span class="dot"></span><span class="nm"></span></div><div class="sub"></div>
+  <div class="kpis">
+    <div class="kpi" data-k="late"><div class="n" data-v="late">–</div><div class="l">지연 트럭 / 출발</div></div>
+    <div class="kpi" data-k="pile"><div class="n" data-v="pile">–</div><div class="l">2층 입고 대기</div></div>
+    <div class="kpi" data-k="chg"><div class="n" data-v="chg">–</div><div class="l">충전 대기 로봇</div></div>
+    <div class="kpi" data-k="zone"><div class="n" data-v="zone">–</div><div class="l">통로 대기 로봇</div></div>
+  </div>
+  <div class="weekotp"><span>일주일 전체 · 정시율 <b data-v="otp"></b></span><span>입고 P95 <b data-v="p95"></b></span></div>`;
+  vp.append(b);
+  const chips = el('div'); vp.append(chips);
+  return {b, chips, chipEls:{}};
+}
+const badgeL = makeBadge($('#vpL')), badgeR = makeBadge($('#vpR'));
+
+function fmtClock(s) { s = Math.max(0, s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return `${h}:${String(m).padStart(2, '0')}`; }
+function fmtDay(absH) { const d = Math.floor(absH / 24) + 1, h = Math.floor(absH % 24), m = Math.floor((absH * 60) % 60); return `${d}일차 ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; }
+
+async function setScene(i) {
+  sceneIdx = i; const S = SCENES[i];
+  [...tabs.children].forEach((b, k) => b.setAttribute('aria-selected', k === i ? 'true' : 'false'));
+  $('#s-what').textContent = S.what; $('#s-where').textContent = S.where;
+  const pr = $('#presets'); pr.innerHTML = '';
+  const all = [{id:'all', label:'전체 보기', floor:'both', ...DEFAULT_VIEW}, ...S.presets];
+  all.forEach(p => { const b = el('button', 'preset', p.label); b.type = 'button'; b.onclick = () => { setFloor(p.floor); flyTo(p); [...pr.children].forEach(x => x.classList.toggle('on', x === b)); }; pr.append(b); });
+  $('#loading').style.display = 'flex';
+  const [dl, dr] = await Promise.all([getRun(S.L), getRun(S.R)]);
+  if (sceneIdx !== i) return;
+  houses[0].load(dl); houses[1].load(dr);
+  T = 0; TMAX = Math.min(dl.t1 - dl.t0, dr.t1 - dr.t0);
+  for (const [bd, id, d, side] of [[badgeL, S.L, dl, 'l'], [badgeR, S.R, dr, 'r']]) {
+    const R = RUNS[id];
+    bd.b.querySelector('.nm').textContent = R.full;
+    bd.b.querySelector('.dot').style.background = side === 'l' ? 'var(--left)' : 'var(--accent)';
+    bd.b.querySelector('.sub').textContent = `${R.rule} · 소형 로봇 ${R.robots}대 + 대형 2대`;
+    bd.b.querySelectorAll('.kpi').forEach(k => k.classList.toggle('hl', k.dataset.k === S.key));
+    bd.b.querySelector('[data-v=otp]').textContent = d.summary.on_time_pct.toFixed(1) + '%';
+    bd.b.querySelector('[data-v=p95]').textContent = Math.round(d.summary.inbound_lead_p95_min) + '분';
+    bd.chips.innerHTML = ''; bd.chipEls = {};
+  }
+  $('#weekt').textContent = S.week.label;
+  $('#loading').style.display = 'none';
+  setFloor(S.presets[0].floor === '2' ? 'both' : 'both');
+  flyTo(DEFAULT_VIEW);
+  [...pr.children].forEach((x, k) => x.classList.toggle('on', k === 0));
+  playing = true; drawPlay();
+  drawWeek();
+}
+
+// ---------- chips (3D-anchored labels) ----------
+const v3 = new THREE.Vector3();
+function placeChip(bd, key, world, cam, vpRect, text, cls) {
+  let c = bd.chipEls[key];
+  if (!c) { c = el('div', 'chip'); bd.chips.append(c); bd.chipEls[key] = c; }
+  if (text == null) { c.style.display = 'none'; return; }
+  v3.copy(world).project(cam);
+  if (v3.z > 1 || v3.x < -1.1 || v3.x > 1.1 || v3.y < -1.1 || v3.y > 1.1) { c.style.display = 'none'; return; }
+  c.style.display = 'block';
+  c.style.left = ((v3.x + 1) / 2 * vpRect.w) + 'px';
+  c.style.top = ((1 - v3.y) / 2 * vpRect.h) + 'px';
+  if (c.textContent !== text) c.textContent = text;
+  c.className = 'chip ' + (cls || '');
+}
+function updateOverlay(h, bd, cam, rect, xoff) {
+  const S = SCENES[sceneIdx];
+  const d = h.data, t = T;
+  const deps = d.trucks.filter(z => z.depart != null && z.depart >= 0 && z.depart <= t);
+  const late = deps.filter(z => z.delay > 0).length;
+  const q = s => bd.b.querySelector(`[data-v=${s}]`);
+  q('late').textContent = `${late}/${deps.length}`;
+  q('late').style.color = late ? 'var(--bad)' : '';
+  q('pile').textContent = Math.max(0, h.piles[1]) + Math.max(0, h.piles[2]);
+  q('chg').textContent = h.counts.chgWait;
+  q('chg').style.color = h.counts.chgWait ? 'var(--bad)' : '';
+  q('zone').textContent = h.counts.zone;
+  // dock chips
+  [1, 2, 3].forEach(dk => {
+    const info = h.tinfo[dk - 1]; const [, , x, y] = layout.docks[dk - 1];
+    const w = new THREE.Vector3(x + xoff, 3.4, y + 4);
+    if (!info || !floorOn(1)) { placeChip(bd, 'd' + dk, w, cam, rect, null); return; }
+    const {z, pal, leaving} = info;
+    let txt, cls;
+    if (leaving) { txt = z.delay > 0 ? `OUT${dk} 출발 · ${Math.round(z.delay / 60)}분 지연` : `OUT${dk} 정시 출발`; cls = z.delay > 0 ? 'bad' : 'good'; }
+    else if (t > z.deadline) { txt = `OUT${dk} ${pal}/9 · 마감 +${Math.ceil((t - z.deadline) / 60)}분`; cls = 'bad'; }
+    else { const rem = Math.ceil((z.deadline - t) / 60); txt = `OUT${dk} ${pal}/9 · 마감까지 ${rem}분`; cls = rem < 15 ? 'warn' : 'dim'; }
+    placeChip(bd, 'd' + dk, w, cam, rect, txt, cls);
+  });
+  // pile chips
+  [[1, 13.5], [2, 28.45]].forEach(([dk, x]) => {
+    const n = Math.max(0, h.piles[dk]);
+    const hgt = FH + 0.4 + Math.ceil(n / 50) * 0.33;
+    placeChip(bd, 'p' + dk, new THREE.Vector3(x + xoff, hgt + 0.6, 27.3), cam, rect, floorOn(2) ? `입고 IN${dk} 대기 ${n}` : null, n > 300 ? 'bad' : (n > 150 ? 'warn' : 'dim'));
+  });
+  // charger queue chips
+  const ch = [[1, 1.5, 6.1], [2, 1.5, 5.9], [2, 1.5, 25.7]];
+  const byF = {};
+  for (const R of h.robots.values()) { const st = STATES[R.s[R.i]]; if (st === 'CHARGE_WAIT') { const f = Math.round(R.f[R.i]); const yy = R.y[R.i]; const key = f + (f === 2 && yy > 15 ? 'b' : 'a'); byF[key] = (byF[key] || 0) + 1; } }
+  ch.forEach(([f, x, y], k) => {
+    const key = f + (f === 2 && y > 15 ? 'b' : 'a'); const n = byF[key] || 0;
+    placeChip(bd, 'c' + k, new THREE.Vector3(x + xoff, (f - 1) * FH + 1.3, y), cam, rect, (n && floorOn(f)) ? `충전 대기 ${n}` : null, 'bad');
+  });
+  // elevator queue
+  placeChip(bd, 'e', new THREE.Vector3(1.5 + xoff, FH + 2.6, 15.9), cam, rect, h.counts.elevWait ? `엘베 대기 ${h.counts.elevWait}` : null, h.counts.elevWait >= 6 ? 'warn' : 'dim');
+}
+
+// ---------- lanes (timeline) ----------
+const lanecv = $('#lanecv');
+function drawLanes() {
+  const r = lanecv.getBoundingClientRect(); const dpr = devicePixelRatio || 1;
+  if (lanecv.width !== Math.round(r.width * dpr) || lanecv.height !== Math.round(r.height * dpr)) { lanecv.width = Math.round(r.width * dpr); lanecv.height = Math.round(r.height * dpr); }
+  const g = lanecv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = r.width, H = r.height; g.clearRect(0, 0, W, H);
+  if (!houses || !houses[0].data) return;
+  const S = SCENES[sceneIdx];
+  const padL = 62, padR = 8, top = 16, laneH = (H - top - 18) / 2;
+  const X = s => padL + (W - padL - padR) * (s / TMAX);
+  // hour ticks
+  g.font = '11px IBM Plex Mono, monospace'; g.fillStyle = '#5d6b7e'; g.strokeStyle = '#e1e7ef'; g.lineWidth = 1;
+  const absH0 = houses[0].data.t0 / 3600;
+  for (let s = 0; s <= TMAX; s += 3600) { const x = X(s); g.beginPath(); g.moveTo(x, top - 4); g.lineTo(x, H - 16); g.stroke(); g.textAlign = s === 0 ? 'left' : (s >= TMAX ? 'right' : 'center'); g.fillText(fmtDay(absH0 + s / 3600).replace(/^.*? /, ''), x, H - 3); }
+  g.textAlign = 'left'; g.fillStyle = '#5d6b7e'; g.font = '11px IBM Plex Sans KR, sans-serif';
+  g.fillText(S.lane.label + ' (면적)   트럭 출발:', padL, 11);
+  let lx = padL + g.measureText(S.lane.label + ' (면적)   트럭 출발:').width + 10;
+  for (const [c, t] of [['#3ecf8e', '정시'], ['#ff5d62', '지연 +분']]) { g.beginPath(); g.arc(lx, 7, 4, 0, 7); g.fillStyle = c; g.fill(); g.fillStyle = '#5d6b7e'; g.fillText(t, lx + 7, 11); lx += g.measureText(t).width + 22; }
+  // shared max
+  const k = S.lane.k; let mx = 1;
+  for (const h of houses) for (const v of h.data.ts[k]) if (v != null && v > mx) mx = v;
+  mx = niceMax(mx);
+  houses.forEach((h, li) => {
+    const y0 = top + li * laneH, y1 = y0 + laneH - 6;
+    const color = li === 0 ? '#b7791f' : '#2f6fdb';
+    g.fillStyle = '#1b2433'; g.font = '600 12px IBM Plex Sans KR, sans-serif'; g.textAlign = 'right';
+    g.fillText(RUNS[li === 0 ? S.L : S.R].name, padL - 10, y0 + laneH / 2);
+    g.font = '10px IBM Plex Mono, monospace'; g.fillStyle = '#5d6b7e'; g.fillText(fmtN(mx), padL - 10, y0 + 9);
+    g.fillStyle = '#f2f5fa'; g.fillRect(padL, y0, W - padL - padR, laneH - 6);
+    const ts = h.data.ts, tt = ts.time_s, vv = ts[k];
+    g.beginPath(); let started = false;
+    for (let j = 0; j < tt.length; j++) { if (vv[j] == null || tt[j] < 0 || tt[j] > TMAX) continue; const x = X(tt[j]), y = y1 - (y1 - y0 - 4) * (vv[j] / mx); if (!started) { g.moveTo(x, y1); g.lineTo(x, y); started = true; } else g.lineTo(x, y); }
+    if (started) { g.lineTo(X(Math.min(TMAX, tt[tt.length - 1])), y1); g.closePath(); g.fillStyle = color + '40'; g.fill(); g.strokeStyle = color; g.lineWidth = 1.4; g.stroke(); }
+    // trucks
+    for (const z of h.data.trucks) {
+      if (z.depart == null || z.depart < 0 || z.depart > TMAX) continue;
+      const x = X(z.depart), lateZ = z.delay > 0;
+      g.beginPath(); g.arc(x, y0 + 8, 4.5, 0, Math.PI * 2); g.fillStyle = lateZ ? '#ff5d62' : '#3ecf8e'; g.fill();
+      if (lateZ) { g.fillStyle = '#d1343a'; g.font = '10px IBM Plex Mono, monospace'; g.textAlign = 'left'; g.fillText('+' + Math.round(z.delay / 60) + '분', x + 7, y0 + 11); }
+    }
+  });
+  // playhead
+  const px = X(T); g.strokeStyle = '#1b2433'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(px, top - 4); g.lineTo(px, H - 16); g.stroke();
+}
+function niceMax(v) { const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p; return 10 * p; }
+function fmtN(v) { return v >= 100 ? Math.round(v) : (+v.toFixed(1)).toString(); }
+let scrubbing = false;
+function scrubAt(e) { const r = lanecv.getBoundingClientRect(); const x = e.clientX - r.left; const s = (x - 62) / (r.width - 70) * TMAX; seek(Math.max(0, Math.min(TMAX, s))); }
+$('#lanes').addEventListener('pointerdown', e => { scrubbing = true; $('#lanes').setPointerCapture(e.pointerId); scrubAt(e); });
+$('#lanes').addEventListener('pointermove', e => { if (scrubbing) scrubAt(e); });
+$('#lanes').addEventListener('pointerup', () => scrubbing = false);
+function seek(s) {
+  const back = s < T; T = s;
+  for (const h of houses) { if (back) h.resetDynamic(T); else h.advance(T); }
+}
+
+// ---------- week context ----------
+function drawWeek() {
+  const cv = $('#weekcv'); const r = cv.getBoundingClientRect(); if (!r.width) return; const dpr = devicePixelRatio || 1;
+  cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); const W = r.width, H = r.height; g.clearRect(0, 0, W, H);
+  if (!houses || !houses[0].data) return;
+  const S = SCENES[sceneIdx], k = S.week.k; let mx = 0.5;
+  for (const h of houses) for (const v of h.data.week[k]) if (v > mx) mx = v;
+  mx = niceMax(mx);
+  const padB = 14, X = hh => W * (hh / 168), Y = v => (H - padB) - (H - padB - 4) * (v / mx);
+  const t0 = houses[0].data.t0 / 3600;
+  g.fillStyle = 'rgba(47,111,219,.10)'; g.fillRect(X(t0), 0, X(t0 + TMAX / 3600) - X(t0), H - padB);
+  houses.forEach((h, li) => {
+    const w = h.data.week; g.beginPath();
+    w.t.forEach((tt, j) => { const x = X(tt), y = Y(w[k][j]); j ? g.lineTo(x, y) : g.moveTo(x, y); });
+    g.strokeStyle = li === 0 ? '#b7791f' : '#2f6fdb'; g.lineWidth = 1.3; g.stroke();
+  });
+  g.fillStyle = '#5d6b7e'; g.font = '10px IBM Plex Mono, monospace'; g.textAlign = 'left';
+  for (const d of [0, 2, 4, 6]) g.fillText(`${d + 1}일`, X(d * 24) + 2, H - 2);
+  g.textAlign = 'left'; g.fillText('최대 ' + fmtN(mx), 2, 10);
+  g.fillStyle = '#2f6fdb'; g.textAlign = 'left'; const lx = X(t0 + TMAX / 3600) + 4; g.fillText('▮ 재생 구간', lx > W - 64 ? X(t0) - 66 : lx, 10);
+}
+
+// ---------- layout / render ----------
+const stage = $('#stage');
+function vpRects() {
+  const r = stage.getBoundingClientRect();
+  const narrow = r.width < 900;
+  if (narrow) return {W:r.width, H:r.height, a:{x:0, y:r.height / 2, w:r.width, h:r.height / 2}, b:{x:0, y:0, w:r.width, h:r.height / 2}, narrow};
+  return {W:r.width, H:r.height, a:{x:0, y:0, w:r.width / 2, h:r.height}, b:{x:r.width / 2, y:0, w:r.width / 2, h:r.height}, narrow};
+}
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (houses && houses[0].data) {
+    if (playing && !scrubbing) { T += dt * speed; if (T >= TMAX) { T = TMAX; playing = false; drawPlay(); } houses.forEach(h => h.advance(T)); }
+    if (fly) { const u = Math.min(1, (now - fly.t0) / fly.dur), e = u < .5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2; camA.position.lerpVectors(fly.p0, fly.p1, e); controls.target.lerpVectors(fly.t0v, fly.t1, e); if (u >= 1) fly = null; }
+    controls.update();
+    camB.position.copy(camA.position).x += OFF; camB.quaternion.copy(camA.quaternion);
+    houses.forEach(h => h.update(T));
+    const R = vpRects();
+    renderer.setSize(R.W, R.H, false);
+    camA.aspect = camB.aspect = R.a.w / R.a.h; camA.updateProjectionMatrix(); camB.updateProjectionMatrix();
+    // three's viewport y is from bottom
+    for (const [cam, v] of [[camA, R.a], [camB, R.b]]) {
+      const y = R.H - v.y - v.h;
+      renderer.setViewport(v.x, y, v.w, v.h); renderer.setScissor(v.x, y, v.w, v.h); renderer.render(scene, cam);
+    }
+    updateOverlay(houses[0], badgeL, camA, R.a, 0);
+    updateOverlay(houses[1], badgeR, camB, R.b, OFF);
+    const absH = houses[0].data.t0 / 3600 + T / 3600;
+    $('#clock').innerHTML = `${fmtDay(absH)}<small>재생 구간 ${fmtClock(T)} / ${fmtClock(TMAX)} · ${speed}배속</small>`;
+    drawLanes();
+  }
+  requestAnimationFrame(frame);
+}
+addEventListener('resize', () => drawWeek());
+
+(async () => {
+  try {
+    layout = await fetch('layout.json').then(r => r.json());
+    houses = [new House(0), new House(OFF)];
+    camA.position.set(...DEFAULT_VIEW.pos); controls.target.set(...DEFAULT_VIEW.tgt);
+    const h = location.hash.replace('#scene-', '');
+    await setScene(/^[1-4]$/.test(h) ? +h - 1 : 0);
+    requestAnimationFrame(frame);
+  } catch (e) {
+    $('#loading').textContent = '데이터를 불러오지 못했습니다. 페이지를 새로고침해 주세요. (' + e.message + ')';
+  }
+})();
+</script>
+</body>
+</html>
